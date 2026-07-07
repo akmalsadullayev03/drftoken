@@ -1,7 +1,9 @@
 import re
-from rest_framework import serializers, status
-from .models import CustomUser
+from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
+from .models import CustomUser
+
+# ================= VALIDATORS =================
 
 def validate_letters_only(value):
     if not re.match(r"^[A-Za-z'‘`’ ]+$", value):
@@ -17,6 +19,9 @@ def validate_uzb_phone(value):
         raise ValidationError("Telefon raqami noto'g'ri formatda. Namuna: +998901234567")
     return cleaned_phone
 
+
+# ================= SERIALIZER =================
+
 class CustomUserSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(validators=[validate_letters_only], max_length=50, required=True)
     last_name = serializers.CharField(validators=[validate_letters_only], max_length=50, required=True)
@@ -26,6 +31,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
+            'id',
             'first_name',
             'last_name',
             'username',
@@ -41,54 +47,32 @@ class CustomUserSerializer(serializers.ModelSerializer):
         }
         
     def validate_username(self, username):
-        user = CustomUser.objects.filter(username=username).first()
-        if user:
-            raise ValidationError({
-                'msg': 'Bu username band',
-                'status': status.HTTP_400_BAD_REQUEST
-            })
+        if CustomUser.objects.filter(username=username).exists():
+            raise ValidationError("Bu username allaqachon band.")
             
         if username.isdigit():
-            raise ValidationError({
-                'msg': 'Username raqamlardan iborat bolmasligi kerak',
-                'status': status.HTTP_400_BAD_REQUEST
-            })
+            raise ValidationError("Username faqat raqamlardan iborat bo'lishi mumkin emas.")
             
         if len(username) < 5:
-            raise ValidationError({
-                'msg': 'Username 5 ta harf va belgidan kam bolmasligi kerak',    
-                'status': status.HTTP_400_BAD_REQUEST
-            })  
+            raise ValidationError("Username kamida 5 ta belgidan iborat bo'lishi kerak.")    
             
         if username[0].isdigit():
-            raise ValidationError({
-                'msg': 'Username raqam bn bowlanmasin',
-                'status': status.HTTP_400_BAD_REQUEST
-            })
+            raise ValidationError("Username raqam bilan boshlanishi mumkin emas.")
             
         if not re.match(r'^\w+$', username):
-            raise ValidationError({
-                'msg': 'Username faqat harf,raqam va _ bolishi kerak',
-                'status': status.HTTP_400_BAD_REQUEST
-            })
+            raise ValidationError("Username faqat harf, raqam va pastki chiziq (_) dan iborat bo'lishi kerak.")
             
         return username
 
     def validate_email(self, value):
         email = value.lower().strip()
         if CustomUser.objects.filter(email=email).exists():
-            raise ValidationError({
-                'msg': 'Bu email manzili allaqachon ro\'yxatdan o\'tgan.',
-                'status': status.HTTP_400_BAD_REQUEST
-            })
+            raise ValidationError("Bu email manzili allaqachon ro'yxatdan o'tgan.")
             
         forbidden_domains = ['mailinator.com', 'trashmail.com', 'tempmail.com']
         domain = email.split('@')[-1]
         if domain in forbidden_domains:
-            raise ValidationError({
-                'msg': 'Vaqtinchalik pochtalardan foydalanish taqiqlangan.',
-                'status': status.HTTP_400_BAD_REQUEST
-            })
+            raise ValidationError("Vaqtinchalik pochtalardan foydalanish taqiqlangan.")
             
         return email
         
@@ -98,16 +82,24 @@ class CustomUserSerializer(serializers.ModelSerializer):
         first_name = data.get('first_name', '').strip()
         last_name = data.get('last_name', '').strip()
         
-        if (password and confirm_password) and password != confirm_password:
-            raise ValidationError({
-                 'msg': 'Parolar mavjud emas',
-                 'status': status.HTTP_400_BAD_REQUEST
-            })  
+       
+        if password != confirm_password:
+            raise ValidationError({"confirm_password": "Kiritilgan parollar bir-biriga mos kelmadi."})  
             
+   
         if first_name.lower() == last_name.lower():
-            raise ValidationError({
-                'msg': 'Ism va familiya bir xil bo\'lishi mumkin emas.',
-                'status': status.HTTP_400_BAD_REQUEST
-            })
+            raise ValidationError({"last_name": "Ism va familiya bir xil bo'lishi mumkin emas."})
             
         return data
+
+    def create(self, validated_data):
+        validated_data.pop('confirm_password')
+        photo = validated_data.pop('photo', None)
+        
+        user = CustomUser.objects.create_user(**validated_data)
+        
+        if photo:
+            user.photo = photo
+            user.save()
+            
+        return user
